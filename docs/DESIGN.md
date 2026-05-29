@@ -124,10 +124,13 @@ Lives in `lats/hotpotqa/`, reusing the domain-agnostic core (`node`, `llm`,
   to the HumanEval domain's test-feedback loop (see D9).
 
 Validation: 44/44 tests incl. an end-to-end MockLLM search and offline env tests;
-live MediaWiki verified; live `gpt-3.5-turbo` EM 5/5 on the vendored sample.
-Caveat: the vendored sample is single-fact questions that rarely force multi-hop
-Search→Lookup; a real multi-hop EM needs the official HotPotQA dev set via
-`--dataset`.
+live MediaWiki verified. Real eval on 20 official HotPotQA distractor-dev
+questions (`gpt-3.5-turbo`): EM 0.20 → **0.35** (F1 0.30 → 0.46) after a fix the
+eval surfaced — the model answered yes/no questions in sentences, so `Finish` now
+requires short answer spans. Known gap vs the paper's ~0.6: remaining misses are
+hard 2-hop questions that exhaust the search budget without a `Finish`, plus
+date/format normalization near-misses. Closing it needs a larger search (bigger
+`n`/iters) and the paper's exact prompts.
 
 ## Known limitations
 - Small-subset validation only; not the full 164-problem benchmark or GPT-4.

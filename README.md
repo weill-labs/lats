@@ -120,11 +120,32 @@ uv run lats-hotpotqa --mock --num-problems 2          # no API / no network
 uv run lats-hotpotqa --dataset hotpot_dev_distractor_v1.json --num-problems 50
 ```
 
-Live sanity check on the vendored sample (`gpt-3.5-turbo`): **EM 5/5**, 32 LLM
-calls. Caveat: the sample is *single-fact* questions, so they rarely force deep
-Search→Lookup chains — this validates the end-to-end pipeline (real Wikipedia +
-ReAct + MCTS + value function), not multi-hop reasoning depth. For a real
-HotPotQA EM number, use the official dev set via `--dataset`.
+### Results
+
+**Pipeline sanity** (vendored single-fact sample, `gpt-3.5-turbo`): EM 5/5. This
+only proves the full path works (real Wikipedia + ReAct + MCTS + value fn); the
+questions rarely force deep Search→Lookup.
+
+**Real multi-hop** — 20 questions from the official HotPotQA distractor dev split
+(pulled via the HF datasets-server), `gpt-3.5-turbo`:
+
+| config | EM | F1 |
+|---|---|---|
+| `max_iters=8`, verbose answers | 4/20 = 0.20 | 0.30 |
+| `max_iters=12`, terse-answer prompt | **7/20 = 0.35** | **0.46** |
+
+The jump came from a principled fix surfaced by the eval: the model reasoned yes/no
+questions correctly but answered in sentences ("Yes, Scott Derrickson…" vs gold
+"yes"), so the `Finish` prompt now requires short answer spans. **This is a
+faithful partial reproduction with a known gap** vs the paper's ~0.6 GPT-3.5
+number — the remaining misses are (a) hard 2-hop questions that exhaust the search
+budget without a `Finish` (under-search) and (b) date/format normalization
+near-misses. Closing the gap needs a larger search (bigger `n` / more iters) and
+the paper's exact prompts. Reproduce with:
+
+```bash
+uv run lats-hotpotqa --dataset <hotpot_dev.json> --num-problems 20 --max-iters 12
+```
 
 ## Tests
 
