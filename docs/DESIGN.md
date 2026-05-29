@@ -81,10 +81,34 @@ translation). Vendoring keeps runs offline and reproducible.
 the repo root regardless of cwd). It was copied from `hgm/.env`'s `OAI_KEY`
 without ever appearing in argv, stdout, or shell history.
 
+### D9 — Baseline strategies share LATS's machinery
+`strategies.py` adds `simple`, `reflexion`, and `dfs`, all reusing the same
+`generator`, `executor`, prompts, and `Node`, so a comparison isolates the
+*search algorithm* rather than confounding it with prompt/eval differences.
+- **simple** — one zero-shot sample scored on hidden tests (pass@1 base).
+- **reflexion** — a single chain (no branching): run internal tests → reflect →
+  regenerate with accumulated reflection memory, up to `max_iters` times.
+- **dfs** — Tree-of-Thoughts-style depth-first search: expand `n`, recurse into
+  the highest-internal-reward child first, backtrack on dead ends. No UCT and no
+  backpropagation (the distinction from LATS). Bounded by a `max_iters × n`
+  candidate budget so generation cost is comparable to LATS.
+
+`ProblemResult` moved to `result.py` (with a `strategy` field) so `mcts.py` and
+`strategies.py` share one type without importing each other. The CLI gained
+`--strategy {lats,simple,reflexion,dfs,all}`; `all` prints a comparison table and
+attributes LLM calls per strategy by snapshotting the counter.
+
+Note on ReAct: pure ReAct (thought→action→observation against an external
+environment) is a baseline for the *acting* domains (HotPotQA/WebShop), not
+HumanEval. For code its act-observe loop reduces to Reflexion's test-feedback
+loop, which is what we implement. ReAct proper will land with the HotPotQA domain.
+
 ## Known limitations
 - Small-subset validation only; not the full 164-problem benchmark or GPT-4.
 - `gpt-4` preset (`max_iters=8, n=5`) is wired but untested here (cost).
 - Cost/latency scale with `max_iters × n` LLM calls per problem.
+- DFS worst-case fan-out is capped by a candidate budget; that cap is logged
+  implicitly via `num_candidates` but DFS may stop before exhausting the tree.
 
 ## Possible extensions
 - DFS/Reflexion/ReAct baselines for comparison (official repo has them).

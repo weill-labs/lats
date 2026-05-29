@@ -1,8 +1,10 @@
-"""CLI: run LATS over a HumanEval subset and report pass@1.
+"""CLI: run a search strategy over a HumanEval subset and report pass@1.
 
 Examples:
-    uv run lats --num-problems 20 --model gpt-3.5-turbo
-    uv run lats --mock --num-problems 3        # no API, plumbing smoke test
+    uv run lats --num-problems 20 --model gpt-3.5-turbo            # LATS (default)
+    uv run lats --strategy reflexion --num-problems 10             # one baseline
+    uv run lats --strategy all --num-problems 8                    # head-to-head table
+    uv run lats --mock --num-problems 3                            # no API, plumbing only
 """
 
 from __future__ import annotations
@@ -13,14 +15,24 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import List
+from typing import Callable, List
 
 from dotenv import load_dotenv
 
+from . import strategies
 from .config import LATSConfig
 from .dataset import load_dataset, select_subset
 from .llm import LLM, Message, MockLLM, OpenAIChat
 from .mcts import run_lats_on_problem
+from .result import ProblemResult
+
+# All selectable strategies. "lats" is our method; the rest are baselines.
+STRATEGY_FNS: dict[str, Callable[..., ProblemResult]] = {
+    "lats": run_lats_on_problem,
+    **strategies.STRATEGIES,
+}
+# Order used by --strategy all: cheap -> expensive.
+ALL_ORDER = ["simple", "reflexion", "dfs", "lats"]
 
 
 def _mock_handler(messages: List[Message], n: int) -> List[str]:
@@ -47,13 +59,16 @@ def build_llm(args) -> LLM:
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description="Run LATS on HumanEval.")
+    p = argparse.ArgumentParser(description="Run LATS / baselines on HumanEval.")
+    p.add_argument(
+        "--strategy",
+        default="lats",
+        choices=["lats", "simple", "reflexion", "dfs", "all"],
+        help="search strategy ('all' runs every strategy and prints a comparison)",
+    )
     p.add_argument("--model", default="gpt-3.5-turbo")
     p.add_argument(
-        "--max-iters",
-        type=int,
-        default=None,
-        help="MCTS iterations (default: config preset)",
+        "--max-iters", type=int, default=None, help="iterations/depth (default: preset)"
     )
     p.add_argument(
         "--expansion-factor", type=int, default=None, help="children per expansion (n)"
@@ -126,41 +141,61 @@ def main(argv=None) -> int:
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    names = ALL_ORDER if args.strategy == "all" else [args.strategy]
+    # Per-strategy tallies; calls are attributed by snapshotting the LLM counter.
+    tally = {n: {"solved": 0, "candidates": 0, "calls": 0} for n in names}
+
     print(
-        f"LATS | model={cfg.model} iters={cfg.max_iters} n={cfg.expansion_factor} "
-        f"tests={cfg.number_of_tests} | {len(problems)} problems "
-        f"{'[MOCK]' if args.mock else ''}"
+        f"strategies={names} | model={cfg.model} iters={cfg.max_iters} "
+        f"n={cfg.expansion_factor} tests={cfg.number_of_tests} | "
+        f"{len(problems)} problems {'[MOCK]' if args.mock else ''}"
     )
     print(f"logging to {out_path}\n")
 
-    solved = 0
-    first_try = 0
     for i, item in enumerate(problems, 1):
         print(f"[{i}/{len(problems)}] {item['name']}")
-        result = run_lats_on_problem(item, llm, cfg, rng=rng, log=print)
-        solved += int(result.solved)
-        first_try += int(result.solved_on_first_try)
-        with open(out_path, "a") as f:
-            f.write(
-                json.dumps(
-                    {
-                        "name": result.name,
-                        "solved": result.solved,
-                        "solved_on_first_try": result.solved_on_first_try,
-                        "iterations_used": result.iterations_used,
-                        "num_candidates": result.num_candidates,
-                        "final_code": result.final_code,
-                    }
+        for name in names:
+            calls_before = llm.num_calls
+            result = STRATEGY_FNS[name](item, llm, cfg, rng=rng, log=print)
+            tally[name]["solved"] += int(result.solved)
+            tally[name]["candidates"] += result.num_candidates
+            tally[name]["calls"] += llm.num_calls - calls_before
+            with open(out_path, "a") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "name": result.name,
+                            "strategy": result.strategy,
+                            "solved": result.solved,
+                            "solved_on_first_try": result.solved_on_first_try,
+                            "iterations_used": result.iterations_used,
+                            "num_candidates": result.num_candidates,
+                            "final_code": result.final_code,
+                        }
+                    )
+                    + "\n"
                 )
-                + "\n"
-            )
-        print(f"    running pass@1 = {solved}/{i} = {solved / i:.3f}\n")
+        print()
 
-    print("=" * 56)
-    print(f"pass@1 = {solved}/{len(problems)} = {solved / max(len(problems), 1):.3f}")
-    print(f"solved on first try: {first_try}")
-    print(f"LLM calls: {llm.num_calls}  completions: {llm.num_completions}")
+    _print_comparison(tally, len(problems))
     return 0
+
+
+def _print_comparison(tally: dict, total: int) -> None:
+    header = ("strategy", "pass@1", "solved", "candidates", "llm_calls")
+    print("=" * 64)
+    print(
+        f"{header[0]:<12}{header[1]:<10}{header[2]:<10}{header[3]:<12}{header[4]:<10}"
+    )
+    print("-" * 64)
+    for name, t in tally.items():
+        rate = t["solved"] / total if total else 0.0
+        solved_str = f"{t['solved']}/{total}"
+        print(
+            f"{name:<12}{rate:<10.3f}{solved_str:<10}"
+            f"{t['candidates']:<12}{t['calls']:<10}"
+        )
+    print("=" * 64)
 
 
 if __name__ == "__main__":

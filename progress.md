@@ -2,28 +2,31 @@
 
 ## Session 1 — 2026-05-29
 
-### Done (all phases complete)
-- Researched paper (arXiv:2310.04406) + official `programming/` code; captured to findings.md.
-- Built clean-room implementation under `lats/`:
-  config, llm (OpenAIChat + MockLLM), prompts, generator, executor (subprocess-isolated),
-  parse, node (UCT/backprop), mcts (clean select/expand/simulate/backprop), dataset, run_lats CLI.
-- Vendored dataset (160 problems). `uv sync` (openai 2.38.0, tenacity, dotenv, pytest).
-- Secret: copied hgm/.env OAI_KEY → repo .env (gitignored), validated against OpenAI API.
-- Wrote README.md + docs/DESIGN.md (decision log).
+### Phases 1–6 (on `master`, pushed to github.com/weill-labs/lats)
+- Researched paper + official code (findings.md). Built clean-room LATS under `lats/`.
+- Vendored dataset (160 problems). Secret from hgm/.env OAI_KEY → repo .env (gitignored).
+- Tests 19/19; 20-problem gpt-3.5 run → **pass@1 = 17/20 = 0.850**.
+- README + docs/DESIGN.md. Renamed repo+dir `lats-humaneval` → `lats`. Pushed public.
 
-### Test results
-- `uv run pytest -q` → 19/19 passed (parse, executor, node, end-to-end mock). No API key needed.
-- `uv run lats --mock --num-problems 3` → runs full loop, 0 API cost, pass@1 0/3 (stub; plumbing only).
-- 2-problem real run (gpt-3.5-turbo) → 2/2 solved.
-- 20-problem real run (gpt-3.5-turbo, preset iters=4/n=3/tests=4) → **pass@1 = 17/20 = 0.850**
-  (13 first-try, 4 by search; 3 misses exhausted iters cleanly). 136 LLM calls, 176 completions.
-  Logs: logs/run20.jsonl, logs/run20.out.
+### Phase 7 — Baselines (branch `add-baselines`)
+- Refactor: `result.py` (shared ProblemResult + `strategy`); `branch_history` → node.py.
+- `strategies.py`: run_simple / run_reflexion (linear) / run_dfs (ToT, budgeted, no UCT/backprop).
+- CLI `--strategy {lats,simple,reflexion,dfs,all}`; `all` → comparison table + per-strategy call attribution.
+- `tests/test_strategies_mock.py`. Full suite **24/24 green**; ruff clean.
 
-### Key observations
-- Fast path dominates on easy problems (root solution passes hidden tests, 0 iterations).
-- MCTS search + reflection demonstrably rescues failures (encrypt 2it, fibfib 1it, do_algebra last-iter).
-- Subprocess executor timeouts hold under real generated code (no hangs on the 3 hard misses).
+### Test / run results
+- 4-strategy comparison, gpt-3.5-turbo, first 8 problems (logs/compare8.jsonl):
 
-### Next (optional, not started)
-- Full 164-problem sweep / GPT-4 preset for the headline number.
-- DFS/Reflexion/ReAct baselines; token-cost accounting; pass@k.
+  | strategy | pass@1 | candidates | llm_calls |
+  |---|---|---|---|
+  | simple | 5/8 = 0.625 | 8 | 8 |
+  | reflexion | 5/8 = 0.625 | 21 | 44 |
+  | dfs | 5/8 = 0.625 | 41 | 51 |
+  | lats | **6/8 = 0.750** | 40 | 75 |
+
+- LATS uniquely solved `double_the_difference`; `fibfib` needed search (simple missed it).
+- Honest caveat: N=8 is within sampling noise; `encrypt` solved only by `simple` (lucky sample).
+
+### Next (optional)
+- Larger comparison (`--strategy all --num-problems 50`) for a less noisy ranking.
+- HotPotQA domain (adds real ReAct + Wikipedia env). Full GPT-4 sweep.

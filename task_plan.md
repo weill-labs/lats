@@ -72,12 +72,20 @@ lats-humaneval/
 ### Phase 6 — Docs & wrap-up — `complete`
 - [x] README.md + docs/DESIGN.md decision log.
 - [x] Fill README results table from run20.jsonl.
-- [ ] Final git commit.
+- [x] Final commit + pushed: github.com/weill-labs/lats (public). Local dir renamed `lats-humaneval` → `lats`.
 
-## Open questions for user
-1. Repo name `lats-humaneval` OK? (already created; easy to rename)
-2. Is `OPENAI_API_KEY` available in env for the real subset run, or stop after `--mock`?
-3. Default subset size for the real run (e.g. 5, 10, 20)?
+### Phase 7 — Baseline strategies (feature branch `add-baselines`) — `in_progress`
+- [x] Refactor: shared `result.py` (ProblemResult + `strategy` field); `branch_history` → node.py.
+- [x] `strategies.py`: run_simple (pass@1 base), run_reflexion (linear), run_dfs (ToT; budgeted; no UCT/backprop).
+- [x] `run_lats.py`: `--strategy {lats,simple,reflexion,dfs,all}`; `all` prints comparison + per-strategy call attribution.
+- [x] `tests/test_strategies_mock.py`. Full suite 24/24 green; ruff clean.
+- [ ] Real `--strategy all` on 8 problems — RUNNING (logs/compare8.jsonl); fill comparison table.
+- [ ] README baselines section + DESIGN D9. Commit on branch, push, open PR → master.
+
+## Resolved decisions
+1. Repo named **`lats`** (org: weill-labs, public), HumanEval = first domain.
+2. `OPENAI_API_KEY`: sourced from `~/github/weill-labs/hgm/.env` (`OAI_KEY`) → repo `.env` (gitignored).
+3. Subset for the headline run: 20 problems, gpt-3.5-turbo.
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

@@ -69,6 +69,26 @@ class Node:
         return f"Node(depth={self.depth}, visits={self.visits}, value={self.value:.2f})"
 
 
+def branch_history(node: Node) -> Tuple[List[str], List[str], List[str]]:
+    """Aligned (impls, feedbacks, reflections) from root down to `node`.
+
+    Only nodes that have been evaluated (have test feedback) are included, so the
+    three lists stay index-aligned for the reflexion prompt. Shared by LATS
+    (`mcts.py`) and the DFS baseline (`strategies.py`).
+    """
+    chain: List[Node] = []
+    cur: Optional[Node] = node
+    while cur is not None:
+        chain.append(cur)
+        cur = cur.parent
+    chain.reverse()
+    evaluated = [c for c in chain if c.test_feedback]
+    impls = [c.solution for c in evaluated]
+    feedbacks = [c.test_feedback for c in evaluated]
+    reflections = [c.reflection for c in evaluated]
+    return impls, feedbacks, reflections
+
+
 def gather_context_from_tree(node: Node) -> Tuple[List[str], List[str]]:
     """Walk from `node` up to the root, collecting feedback and reflections.
 

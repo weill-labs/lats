@@ -73,18 +73,23 @@ uv run lats --mock --num-problems 3
 uv run lats --num-problems 20 --model gpt-3.5-turbo
 uv run lats --num-problems 10 --model gpt-4          # uses the gpt4 preset
 
+# Baselines and head-to-head comparison
+uv run lats --strategy reflexion --num-problems 10   # one baseline
+uv run lats --strategy all --num-problems 8          # simple/reflexion/dfs/lats + table
+
 # Useful flags
+--strategy {lats,simple,reflexion,dfs,all}
 --max-iters N --expansion-factor N --number-of-tests N --temperature F
 --exploration-weight F --start N --names NAME [NAME ...] --shuffle-seed N --output PATH
 ```
 
 Results stream to stdout and a JSONL log (default `logs/lats_<ts>.jsonl`, one
-row per problem with `solved`, `iterations_used`, `num_candidates`, `final_code`).
+row per problem+strategy with `solved`, `iterations_used`, `num_candidates`, `final_code`).
 
 ## Tests
 
 ```bash
-uv run pytest -q     # 19 tests, no API key needed (uses MockLLM)
+uv run pytest -q     # 24 tests, no API key needed (uses MockLLM)
 ```
 
 ## Results
@@ -108,6 +113,39 @@ These are small-subset sanity numbers, not the paper's full 164-problem figure
 ```bash
 uv run lats --num-problems 200 --model gpt-4    # full set (cost: many GPT-4 calls)
 ```
+
+## Baselines & comparison
+
+`--strategy all` runs four methods on the same problems with the same generator,
+executor, and prompts — so the only thing that varies is the **search**:
+
+| Strategy | Search | Branching | Backtracks? | Value signal |
+|---|---|---|---|---|
+| `simple` | none (1 sample) | — | no | — |
+| `reflexion` | linear chain | no | no | internal tests (to trigger reflect) |
+| `dfs` | depth-first (ToT) | yes (`n`) | yes, to best sibling | internal-test pass rate |
+| `lats` | MCTS (UCT) | yes (`n`) | yes, via UCT + backprop | internal-test pass rate |
+
+Head-to-head, `gpt-3.5-turbo`, **first 8 problems** (`max_iters=4, n=3, tests=4`):
+
+| Strategy | pass@1 | candidates generated | LLM calls |
+|---|---|---|---|
+| `simple` | 5/8 = 0.625 | 8 | 8 |
+| `reflexion` | 5/8 = 0.625 | 21 | 44 |
+| `dfs` | 5/8 = 0.625 | 41 | 51 |
+| **`lats`** | **6/8 = 0.750** | 40 | 75 |
+
+LATS came out ahead, uniquely solving `double_the_difference`. All four solved
+the four easy problems from the first sample; `fibfib` required search (the three
+search methods got it, `simple` did not). Cost rises with search depth/branching:
+`simple` (8 calls) < `reflexion` (44) < `dfs` (51) < `lats` (75).
+
+**Honest caveat:** 8 problems is far too few to separate these methods
+statistically — the ranking is within sampling noise. `encrypt` is a telling
+artifact: `simple`'s single lucky sample passed while the search methods' (independent,
+temperature-0.8) first samples differed and search didn't recover within budget.
+The paper's clean separation shows up at full benchmark scale, not on 8 problems.
+Reproduce/extend with `uv run lats --strategy all --num-problems 50`.
 
 ## Differences from the official implementation
 
