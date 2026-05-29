@@ -4,10 +4,14 @@ A small, tested reimplementation of **Language Agent Tree Search (LATS)**
 ([arXiv:2310.04406](https://arxiv.org/abs/2310.04406), ICML 2024), built from the
 paper's algorithm and the official repo's prompts, on the modern OpenAI SDK.
 
-The **first implemented domain is programming / HumanEval**. The code is layered
-(a provider-agnostic LLM interface, a pluggable executor and dataset loader) so
-the other LATS domains — HotPotQA (reasoning+acting) and WebShop
-(decision-making) — can be added alongside it later.
+Two domains are implemented, sharing one domain-agnostic core (`node.py` UCT +
+backprop, `llm.py`, `result.py`):
+- **programming / HumanEval** — MCTS over code; reward = self-generated unit tests.
+- **HotPotQA (reasoning + acting)** — ReAct (Thought/Action/Observation) over a
+  Wikipedia search environment; reward = answer exact-match.
+
+WebShop (decision-making) is the remaining paper domain and would slot in the
+same way.
 
 > LATS wraps an LLM in a Monte Carlo Tree Search loop. The *same* model is the
 > agent (writes code), the value-function helper (its self-generated tests score
@@ -41,18 +45,30 @@ exploit-vs-explore rule (same as AlphaGo), over LLM-generated children.
 
 ```
 lats/
-  config.py      LATSConfig + paper presets (gpt35 / gpt4)
+  config.py      LATSConfig + paper presets (gpt35 / gpt4) + react_max_depth
   llm.py         provider abstraction: OpenAIChat (openai>=1.0) + MockLLM
+  node.py        MCTS Node, UCT, backprop, branch-context — shared by both domains
+  result.py      ProblemResult (shared across strategies)
+  # --- HumanEval domain ---
   prompts.py     the four prompt roles (simple / reflexion / reflect / tests)
   generator.py   LLM wrappers: internal_tests / simple_impl / reflexion_impls / self_reflection
   executor.py    subprocess-isolated test runner (execute) + hidden scorer (evaluate)
   parse.py       extract code from fenced / unfenced LLM output
-  node.py        MCTS Node, UCT, backprop, branch-context gathering
   mcts.py        run_lats_on_problem — the search
+  strategies.py  baselines: simple / reflexion / dfs
   dataset.py     load + subset HumanEval-Python
-  run_lats.py    CLI entrypoint (pass@1 reporting)
+  run_lats.py    CLI (pass@1, --strategy {lats,simple,reflexion,dfs,all})
   data/humaneval-py.jsonl   vendored benchmark (MultiPL-E reworded, 160 problems)
-tests/           parse / executor / node / end-to-end mock (no API)
+  # --- HotPotQA domain ---
+  hotpotqa/
+    wikienv.py   ReAct Search/Lookup/Finish over Wikipedia (injectable HTTP)
+    scoring.py   SQuAD-style normalize / exact_match / f1
+    dataset.py   load official HotPotQA json/jsonl (+ vendored sample)
+    prompts.py   ReAct / value-function / reflection prompts
+    agent.py     Step, generate_steps, evaluate_state (LM value), reflect
+    search.py    run_lats_hotpotqa — MCTS over ReAct trajectories
+  run_hotpotqa.py  CLI (EM/F1 reporting)
+tests/           44 tests, all API-free (MockLLM + injected env)
 docs/DESIGN.md   architecture + decision log
 ```
 
@@ -86,10 +102,34 @@ uv run lats --strategy all --num-problems 8          # simple/reflexion/dfs/lats
 Results stream to stdout and a JSONL log (default `logs/lats_<ts>.jsonl`, one
 row per problem+strategy with `solved`, `iterations_used`, `num_candidates`, `final_code`).
 
+## HotPotQA domain (reasoning + acting)
+
+ReAct over a Wikipedia environment, searched with MCTS. Each tree node is one
+ReAct step (Thought + Action + Observation); the path to a node is a trajectory.
+Expansion samples `n` next steps and *executes* each action in a per-branch
+Wikipedia env; a terminal `Finish[answer]` gets the exact-match reward, a
+non-terminal node gets the LM value-function estimate, and failed trajectories
+add a reflection that feeds later expansions.
+
+```bash
+# Vendored sample (5 simple questions) — validates the pipeline
+uv run lats-hotpotqa --num-problems 5 --model gpt-3.5-turbo
+uv run lats-hotpotqa --mock --num-problems 2          # no API / no network
+
+# Real multi-hop eval: point at the official HotPotQA dev file
+uv run lats-hotpotqa --dataset hotpot_dev_distractor_v1.json --num-problems 50
+```
+
+Live sanity check on the vendored sample (`gpt-3.5-turbo`): **EM 5/5**, 32 LLM
+calls. Caveat: the sample is *single-fact* questions, so they rarely force deep
+Search→Lookup chains — this validates the end-to-end pipeline (real Wikipedia +
+ReAct + MCTS + value function), not multi-hop reasoning depth. For a real
+HotPotQA EM number, use the official dev set via `--dataset`.
+
 ## Tests
 
 ```bash
-uv run pytest -q     # 24 tests, no API key needed (uses MockLLM)
+uv run pytest -q     # 44 tests, no API key needed (uses MockLLM + injected env)
 ```
 
 ## Results

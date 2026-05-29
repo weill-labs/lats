@@ -21,3 +21,4 @@ packages = ["lats"]
 
 [project.scripts]
 lats = "lats.run_lats:main"
+lats-hotpotqa = "lats.run_hotpotqa:main"

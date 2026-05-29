@@ -103,6 +103,32 @@ environment) is a baseline for the *acting* domains (HotPotQA/WebShop), not
 HumanEval. For code its act-observe loop reduces to Reflexion's test-feedback
 loop, which is what we implement. ReAct proper will land with the HotPotQA domain.
 
+### D10 — HotPotQA domain (ReAct + MCTS over trajectories)
+Lives in `lats/hotpotqa/`, reusing the domain-agnostic core (`node`, `llm`,
+`result`). Key design points:
+- **Node = one ReAct step** (Thought + Action + Observation); the root→node path
+  is a trajectory. We attach `.step`/`.is_terminal` to plain `Node`s.
+- **Environment is replayed, not shared.** Actions mutate Wikipedia env state
+  (current page, lookup cursor), so each expansion builds a fresh env and replays
+  the parent's actions. The page/search fetchers are memoized per question, so
+  replay costs no extra network. The HTTP layer is injected → tests run offline.
+- **Reward**: terminal `Finish` nodes get exact-match (1.0/0.0) against the gold
+  answer; non-terminal nodes get the LM value function (a 1–10 score → [0,1]).
+  Failed terminal trajectories produce a reflection added to a per-question memory
+  that is injected into later expansions.
+- **Selection** is best-first over the live frontier of expandable (non-terminal,
+  depth-bounded) leaves, scored by UCT — a pragmatic variant rather than strict
+  root-to-leaf descent. Documented here so it isn't mistaken for textbook MCTS.
+- **ReAct, not Reflexion-for-code**: this is where genuine ReAct
+  (thought→action→observation against an external environment) lives, as opposed
+  to the HumanEval domain's test-feedback loop (see D9).
+
+Validation: 44/44 tests incl. an end-to-end MockLLM search and offline env tests;
+live MediaWiki verified; live `gpt-3.5-turbo` EM 5/5 on the vendored sample.
+Caveat: the vendored sample is single-fact questions that rarely force multi-hop
+Search→Lookup; a real multi-hop EM needs the official HotPotQA dev set via
+`--dataset`.
+
 ## Known limitations
 - Small-subset validation only; not the full 164-problem benchmark or GPT-4.
 - `gpt-4` preset (`max_iters=8, n=5`) is wired but untested here (cost).
