@@ -22,10 +22,13 @@ class LATSConfig:
     expansion_factor: int = 3  # children sampled per expansion (`n`)
     exploration_weight: float = 1.0  # UCT exploration constant `c`
 
-    # --- Self-testing / evaluation ---
+    # --- Self-testing / evaluation (HumanEval domain) ---
     number_of_tests: int = 4  # internal (self-generated) unit tests
     eval_timeout: int = 10  # seconds for the hidden-test final check
     test_timeout: int = 5  # seconds per internal test execution
+
+    # --- HotPotQA domain ---
+    react_max_depth: int = 7  # max ReAct steps (Thought/Action) per trajectory
 
     @classmethod
     def gpt35(cls) -> "LATSConfig":
