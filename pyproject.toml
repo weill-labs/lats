@@ -1,0 +1,23 @@
+[project]
+name = "lats"
+version = "0.1.0"
+description = "Clean-room reproduction of LATS (arXiv:2310.04406); first domain: HumanEval"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.30",
+    "tenacity>=8.2",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lats"]
+
+[project.scripts]
+lats = "lats.run_lats:main"
