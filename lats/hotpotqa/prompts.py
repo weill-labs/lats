@@ -20,6 +20,9 @@ REACT_SYSTEM = (
     "  Search[entity] — look up a Wikipedia page and read its first paragraph\n"
     "  Lookup[keyword] — return the next sentence on the current page with keyword\n"
     "  Finish[answer] — return the answer and finish the task\n"
+    "The Finish answer must be the shortest possible span — a single entity, "
+    "number, or date — and exactly 'yes' or 'no' for yes/no questions. Do not "
+    "write a sentence or restate the question.\n"
     "Respond with exactly one Thought and one Action, formatted as:\n"
     "Thought: <your reasoning>\nAction: <Search[...]|Lookup[...]|Finish[...]>"
 )
