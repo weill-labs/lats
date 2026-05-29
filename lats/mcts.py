@@ -23,43 +23,13 @@ dangling variable. Reward semantics (`internal_fraction + real_pass`) are kept.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Optional
 
 from . import executor, generator
 from .config import LATSConfig
 from .llm import LLM
-from .node import Node
-
-
-@dataclass
-class ProblemResult:
-    name: str
-    solved: bool
-    final_code: str
-    solved_on_first_try: bool
-    iterations_used: int
-    num_candidates: int
-    internal_tests: List[str] = field(default_factory=list)
-
-
-def _branch_history(node: Node) -> Tuple[List[str], List[str], List[str]]:
-    """Aligned (impls, feedbacks, reflections) from root down to `node`.
-
-    Only nodes that have been evaluated (have test feedback) are included, so the
-    three lists stay index-aligned for the reflexion prompt.
-    """
-    chain: List[Node] = []
-    cur: Optional[Node] = node
-    while cur is not None:
-        chain.append(cur)
-        cur = cur.parent
-    chain.reverse()
-    evaluated = [c for c in chain if c.test_feedback]
-    impls = [c.solution for c in evaluated]
-    feedbacks = [c.test_feedback for c in evaluated]
-    reflections = [c.reflection for c in evaluated]
-    return impls, feedbacks, reflections
+from .node import Node, branch_history
+from .result import ProblemResult
 
 
 def run_lats_on_problem(
@@ -98,7 +68,14 @@ def run_lats_on_problem(
     if res.is_passing and hidden_pass(root.solution):
         say("  solved on first try ✓")
         return ProblemResult(
-            item["name"], True, root.solution, True, 0, num_candidates, tests
+            name=item["name"],
+            solved=True,
+            final_code=root.solution,
+            strategy="lats",
+            solved_on_first_try=True,
+            iterations_used=0,
+            num_candidates=num_candidates,
+            internal_tests=tests,
         )
 
     # Reflect on the root so its children can learn from it.
@@ -122,7 +99,7 @@ def run_lats_on_problem(
             node = node.best_child(config.exploration_weight)
 
         # --- Expansion: sample n children from the branch's accumulated history ---
-        impls, feedbacks, reflections = _branch_history(node)
+        impls, feedbacks, reflections = branch_history(node)
         children_code = generator.reflexion_impls(
             llm,
             func_sig,
